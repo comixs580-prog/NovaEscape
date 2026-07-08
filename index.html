@@ -1,0 +1,1701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nova Escape - Neon Sliding Maze Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for retro rounded game look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght=300..700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #0c071b;
+            color: #ffffff;
+            touch-action: none;
+            overflow: hidden;
+        }
+        /* Custom scrollbar for settings or level list */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #150e30;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #6d28d9;
+            border-radius: 4px;
+        }
+        /* Pulse & glow animations */
+        @keyframes neon-pulse {
+            0%, 100% { filter: drop-shadow(0 0 4px #bc3ffc) drop-shadow(0 0 10px #bc3ffc); }
+            50% { filter: drop-shadow(0 0 8px #bc3ffc) drop-shadow(0 0 18px #d946ef); }
+        }
+        .neon-glow {
+            animation: neon-pulse 3s infinite;
+        }
+        @keyframes button-glow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(188, 63, 252, 0.4); }
+            50% { box-shadow: 0 4px 30px rgba(217, 70, 239, 0.6); }
+        }
+        .glow-btn {
+            animation: button-glow 2s infinite;
+        }
+        .shimmer-bg {
+            background: linear-gradient(90deg, #18103c 25%, #2a1b5c 50%, #18103c 75%);
+            background-size: 200% 100%;
+            animation: shimmer 2.5s infinite linear;
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        /* Hand gesture slide tutorial animation keyframes */
+        @keyframes tutorial-swipe-left {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0;
+            }
+            15% {
+                transform: translate(0, 0) scale(1.1);
+                opacity: 1;
+            }
+            60% {
+                transform: translate(-100px, 0) scale(1);
+                opacity: 1;
+            }
+            85% {
+                transform: translate(-100px, 0) scale(0.9);
+                opacity: 0;
+            }
+            100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- React App Root Container -->
+    <div id="root"></div>
+
+    <!-- Load React, ReactDOM, and Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Game Logic and Interface -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        class SynthEngine {
+            constructor() {
+                this.ctx = null;
+                this.bgmGain = null;
+                this.sfxVolume = 0.9;
+                this.bgmVolume = 1.0; 
+                this.isBgmPlaying = false;
+                this.bgmSequence = null;
+                this.activeOscillators = [];
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            setVolume(type, val) {
+                if (type === 'sfx') {
+                    this.sfxVolume = val / 100;
+                } else if (type === 'bgm') {
+                    this.bgmVolume = val / 100;
+                    if (this.bgmGain && this.ctx) {
+                        // Background Music Sound Increased Now (louder modifier)
+                        this.bgmGain.gain.setValueAtTime(this.bgmVolume * 0.48, this.ctx.currentTime); 
+                    }
+                }
+            }
+
+            playClick() {
+                try {
+                    this.init();
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(900, this.ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(this.sfxVolume * 0.25, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.12);
+                } catch (e) {}
+            }
+
+            // Ball Sound On
+            playMove() {
+                try {
+                    this.init();
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(440, now + 0.12);
+                    gain.gain.setValueAtTime(this.sfxVolume * 0.12, now);
+                    gain.gain.linearRampToValueAtTime(0.001, now + 0.12);
+                    osc.start(now);
+                    osc.stop(now + 0.13);
+                } catch (e) {}
+            }
+
+            // Ball Sound On
+            playHit() {
+                try {
+                    this.init();
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(50, now + 0.15);
+                    gain.gain.setValueAtTime(this.sfxVolume * 0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.16);
+                } catch (e) {}
+            }
+
+            playWin() {
+                try {
+                    this.init();
+                    const now = this.ctx.currentTime;
+                    const notes = [293.66, 369.99, 440.00, 587.33, 739.99, 880.00, 1174.66]; // D Major scales
+                    notes.forEach((freq, idx) => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                        gain.gain.setValueAtTime(0, now);
+                        gain.gain.linearRampToValueAtTime(this.sfxVolume * 0.2, now + idx * 0.08 + 0.01);
+                        gain.gain.exponentialRampToValueAtTime(0.005, now + idx * 0.08 + 0.4);
+                        osc.start(now + idx * 0.08);
+                        osc.stop(now + idx * 0.08 + 0.45);
+                    });
+                } catch (e) {}
+            }
+
+            // Background Music Off
+            playBgm() {
+                // Completely Silenced
+            }
+
+            stopBgm() {
+                this.isBgmPlaying = false;
+                if (this.bgmSequence) clearTimeout(this.bgmSequence);
+            }
+        }
+
+        const audio = new SynthEngine();
+
+        function createSeededRandom(seed) {
+            return function() {
+                const x = Math.sin(seed++) * 10000;
+                return x - Math.floor(x);
+            };
+        }
+
+        // --- HANDCRAFTED MAZE LEVELS (LEVEL 1-5) ---
+        const HANDCRAFTED_LEVELS = [
+            {
+                id: 1,
+                name: "Nova Path Beginnings",
+                width: 11,
+                height: 5,
+                start: { x: 5, y: 3 },
+                goal: { x: 3, y: 2 },
+                paths: [
+                    "1,3", "2,3", "3,3", "4,3", "5,3", "6,3", "7,3", "8,3", "9,3",
+                    "2,2", "2,1", "3,1", "3,2", 
+                    "7,2", "7,1", "8,1", "8,2"
+                ],
+                connections: [
+                    "1,3-2,3", "2,3-3,3", "3,3-4,3", "4,3-5,3", "5,3-6,3", "6,3-7,3", "7,3-8,3", "8,3-9,3",
+                    "2,3-2,2", "2,2-2,1", "2,1-3,1", "3,1-3,2",
+                    "7,3-7,2", "7,2-7,1", "7,1-8,1", "8,1-8,2"
+                ]
+            },
+            {
+                id: 2,
+                name: "The Neon Loop",
+                width: 9,
+                height: 5,
+                start: { x: 4, y: 3 },
+                goal: { x: 2, y: 1 },
+                paths: [
+                    "1,1", "2,1", "3,1", "5,1", "6,1", "7,1",
+                    "1,2", "3,2", "5,2", "7,2",
+                    "1,3", "2,3", "3,3", "4,3", "5,3", "6,3", "7,3",
+                    "3,4", "5,4"
+                ],
+                connections: [
+                    "1,1-2,1", "2,1-3,1", "5,1-6,1", "6,1-7,1",
+                    "1,1-1,2", "1,2-1,3", "1,3-2,3", "2,3-3,3", "3,3-4,3", "4,3-5,3", "5,3-6,3", "6,3-7,3", "7,3-7,2", "7,2-7,1",
+                    "3,1-3,2", "3,2-3,3", "5,1-5,2", "5,2-5,3",
+                    "3,3-3,4", "5,3-5,4"
+                ]
+            },
+            {
+                id: 3,
+                name: "Spiral Sector",
+                width: 7,
+                height: 7,
+                start: { x: 1, y: 1 },
+                goal: { x: 3, y: 3 },
+                paths: [
+                    "1,1", "2,1", "3,1", "4,1", "5,1",
+                    "5,2", "5,3", "5,4", "5,5",
+                    "4,5", "3,5", "2,5", "1,5",
+                    "1,4", "1,3", "1,2",
+                    "2,2", "3,2", "4,2",
+                    "4,3", "4,4",
+                    "3,4", "2,4",
+                    "2,3", "3,3"
+                ],
+                connections: [
+                    "1,1-2,1", "2,1-3,1", "3,1-4,1", "4,1-5,1",
+                    "5,1-5,2", "5,2-5,3", "5,3-5,4", "5,4-5,5",
+                    "5,5-4,5", "4,5-3,5", "3,5-2,5", "2,5-1,5",
+                    "1,5-1,4", "1,4-1,3", "1,3-1,2",
+                    "1,2-2,2", "2,2-3,2", "3,2-4,2",
+                    "4,2-4,3", "4,3-4,4",
+                    "4,4-3,4", "3,4-2,4",
+                    "2,4-2,3", "2,3-3,3"
+                ]
+            },
+            {
+                id: 4,
+                name: "Grid Sector Helix",
+                width: 9,
+                height: 9,
+                start: { x: 4, y: 4 },
+                goal: { x: 1, y: 1 },
+                paths: [
+                    "1,1", "2,1", "3,1", "4,1", "5,1", "6,1", "7,1",
+                    "1,2", "7,2", "3,2", "4,2", "5,2",
+                    "1,3", "3,3", "5,3", "7,3",
+                    "1,4", "2,4", "3,4", "4,4", "5,4", "6,4", "7,4",
+                    "1,5", "3,5", "5,5", "7,5",
+                    "1,6", "3,6", "4,6", "5,6", "7,6",
+                    "1,7", "2,7", "3,7", "4,7", "5,7", "6,7", "7,7"
+                ],
+                connections: [
+                    "1,1-2,1", "2,1-3,1", "3,1-4,1", "4,1-5,1", "5,1-6,1", "6,1-7,1",
+                    "1,1-1,2", "1,2-1,3", "1,3-1,4", "1,4-1,5", "1,5-1,6", "1,6-1,7",
+                    "7,1-7,2", "7,2-7,3", "7,3-7,4", "7,4-7,5", "7,5-7,6", "7,6-7,7",
+                    "1,7-2,7", "2,7-3,7", "3,7-4,7", "4,7-5,7", "5,7-6,7", "6,7-7,7",
+                    "3,2-4,2", "4,2-5,2", "3,2-3,3", "3,3-3,4", "3,4-3,5", "3,5-3,6", "3,6-3,7",
+                    "5,2-5,3", "5,3-5,4", "5,4-5,5", "5,5-5,6", "5,6-5,7",
+                    "3,4-4,4", "4,4-5,4", "3,6-4,6", "4,6-5,6"
+                ]
+            },
+            {
+                id: 5,
+                name: "Junction Chamber",
+                width: 9,
+                height: 9,
+                start: { x: 4, y: 4 },
+                goal: { x: 7, y: 1 },
+                paths: [
+                    "1,1", "2,1", "3,1", "4,1", "5,1", "6,1", "7,1",
+                    "1,2", "4,2", "7,2",
+                    "1,3", "2,3", "3,3", "4,3", "5,3", "6,3", "7,3",
+                    "1,4", "4,4", "7,4",
+                    "1,5", "2,5", "3,5", "4,5", "5,5", "6,5", "7,5",
+                    "1,6", "4,6", "7,6",
+                    "1,7", "2,7", "3,7", "4,7", "5,7", "6,7", "7,7"
+                ],
+                connections: [
+                    "1,1-2,1", "2,1-3,1", "3,1-4,1", "4,1-5,1", "5,1-6,1", "6,1-7,1",
+                    "1,1-1,2", "1,2-1,3", "1,3-1,4", "1,4-1,5", "1,5-1,6", "1,6-1,7",
+                    "7,1-7,2", "7,2-7,3", "7,3-7,4", "7,4-7,5", "7,5-7,6", "7,6-7,7",
+                    "4,1-4,2", "4,2-4,3", "4,3-4,4", "4,4-4,5", "4,5-4,6", "4,6-4,7",
+                    "1,3-2,3", "2,3-3,3", "3,3-4,3", "4,3-5,3", "5,3-6,3", "6,3-7,3",
+                    "1,5-2,5", "2,5-3,5", "3,5-4,5", "4,5-5,5", "5,5-6,5", "6,5-7,5",
+                    "1,7-2,7", "2,7-3,7", "3,7-4,7", "4,7-5,7", "5,7-6,7", "6,7-7,7"
+                ]
+            }
+        ];
+
+        function generateProceduralMaze(levelId, size = 9) {
+            const width = size;
+            const height = size;
+            const paths = [];
+            const connections = [];
+
+            // Seed based on levelId
+            const rand = createSeededRandom(levelId * 751);
+
+            // Initialize cellMap grid inside bounds
+            const cellMap = {};
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const key = `${x},${y}`;
+                    cellMap[key] = { x, y, visited: false };
+                    paths.push(key);
+                }
+            }
+
+            // Simple DFS using seeded RNG to build a robust spanning tree
+            const stack = [];
+            const keys = Object.keys(cellMap);
+            if (keys.length === 0) return generateProceduralMaze(levelId, 9);
+            const startCell = cellMap[keys[0]];
+            startCell.visited = true;
+            stack.push(startCell);
+
+            while (stack.length > 0) {
+                const current = stack[stack.length - 1];
+                const unvisitedNeighbors = [];
+
+                const dirs = [
+                    { dx: 0, dy: -1 },
+                    { dx: 1, dy: 0 },
+                    { dx: 0, dy: 1 },
+                    { dx: -1, dy: 0 }
+                ];
+
+                dirs.forEach(d => {
+                    const nx = current.x + d.dx;
+                    const ny = current.y + d.dy;
+                    const nKey = `${nx},${ny}`;
+                    if (cellMap[nKey] && !cellMap[nKey].visited) {
+                        unvisitedNeighbors.push(cellMap[nKey]);
+                    }
+                });
+
+                if (unvisitedNeighbors.length > 0) {
+                    // Seeded random select
+                    const randIndex = Math.floor(rand() * unvisitedNeighbors.length);
+                    const next = unvisitedNeighbors[randIndex];
+                    next.visited = true;
+                    connections.push(`${current.x},${current.y}-${next.x},${next.y}`);
+                    stack.push(next);
+                } else {
+                    stack.pop();
+                }
+            }
+
+            // Always select consistent opposite corners
+            const start = { x: 1, y: 1 };
+            const goal = { x: width - 2, y: height - 2 };
+
+            return {
+                id: levelId,
+                name: `Synth Chamber ${levelId}`,
+                width,
+                height,
+                start,
+                goal,
+                paths,
+                connections
+            };
+        }
+
+        function solveMazeBFS(level) {
+            const { start, goal } = level;
+            const pathSet = new Set(level.paths);
+            const connSet = new Set();
+            level.connections.forEach(c => {
+                const [p1, p2] = c.split('-');
+                connSet.add(`${p1}-${p2}`);
+                connSet.add(`${p2}-${p1}`);
+            });
+
+            const hasConnection = (x1, y1, x2, y2) => {
+                return connSet.has(`${x1},${y1}-${x2},${y2}`);
+            };
+
+            const isJunction = (x, y, dx, dy) => {
+                if (dx !== 0) {
+                    return hasConnection(x, y, x, y - 1) || hasConnection(x, y, x, y + 1);
+                }
+                if (dy !== 0) {
+                    return hasConnection(x, y, x - 1, y) || hasConnection(x, y, x + 1, y);
+                }
+                return false;
+            };
+
+            const slide = (currX, currY, dx, dy) => {
+                let x = currX;
+                let y = currY;
+                let steps = 0;
+
+                while (true) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    if (!hasConnection(x, y, nx, ny)) {
+                        break; 
+                    }
+
+                    x = nx;
+                    y = ny;
+                    steps++;
+
+                    if (x === goal.x && y === goal.y) {
+                        break;
+                    }
+
+                    if (isJunction(x, y, dx, dy)) {
+                        const forwardOpen = hasConnection(x, y, x + dx, y + dy);
+                        if (forwardOpen) {
+                            break; 
+                        }
+                    }
+                }
+                return { x, y, steps };
+            };
+
+            const queue = [[start.x, start.y, []]];
+            const visited = new Set([`${start.x},${start.y}`]);
+
+            while (queue.length > 0) {
+                const [cx, cy, path] = queue.shift();
+
+                if (cx === goal.x && cy === goal.y) {
+                    return path; 
+                }
+
+                const directions = [
+                    { name: 'Up', dx: 0, dy: -1 },
+                    { name: 'Right', dx: 1, dy: 0 },
+                    { name: 'Down', dx: 0, dy: 1 },
+                    { name: 'Left', dx: -1, dy: 0 }
+                ];
+
+                for (const dir of directions) {
+                    const result = slide(cx, cy, dir.dx, dir.dy);
+                    if (result.steps > 0) {
+                        const key = `${result.x},${result.y}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([result.x, result.y, [...path, { dir: dir.name, from: { x: cx, y: cy }, to: { x: result.x, y: result.y } }]]);
+                        }
+                    }
+                }
+            }
+
+            return []; 
+        }
+
+        function App() {
+            // DIRECT START (Fast start bypasses selection and intro screens directly)
+            const [screen, setScreen] = useState('game'); 
+            const [previousScreen, setPreviousScreen] = useState('game');
+            const [shards, setShards] = useState(60);
+            const [levelsList, setLevelsList] = useState([]);
+            const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
+            const [unlockedLevelCount, setUnlockedLevelCount] = useState(1);
+            const [levelStars, setLevelStars] = useState({ 1: 0 }); 
+
+            // Game Level State
+            const [gameTime, setGameTime] = useState(0);
+            const [gameDistance, setGameDistance] = useState(0);
+            const [isSliding, setIsSliding] = useState(false);
+            const [solved, setSolved] = useState(false);
+            const [earnedStars, setEarnedStars] = useState(0);
+            const [levelShardsGained, setLevelShardsGained] = useState(0);
+            const [shardsDoubled, setShardsDoubled] = useState(false);
+
+            // Zoom Scaling State
+            const [zoomScale, setZoomScale] = useState(1.0);
+            const [showHint, setShowHint] = useState(false);
+            const [hintPath, setHintPath] = useState([]);
+
+            // Settings volume ratios
+            const [bgmVol, setBgmVol] = useState(100); 
+            const [sfxVol, setSfxVol] = useState(90);
+
+            // Virtual Joystick States
+            const [joystickOffset, setJoystickOffset] = useState({ x: 0, y: 0 });
+            const [isDraggingJoystick, setIsDraggingJoystick] = useState(false);
+            const joystickStartPos = useRef({ x: 0, y: 0 });
+
+            // Interaction Refs
+            const canvasRef = useRef(null);
+            const playerPosRef = useRef({ x: 0, y: 0 });
+            const slideTargetRef = useRef(null);
+            const slideQueueRef = useRef([]);
+            const particlesRef = useRef([]);
+            const timerRef = useRef(null);
+
+            // Screen shake values
+            const shakeRef = useRef(0);
+
+            // Track Mouse Drag / Swipe
+            const dragStartRef = useRef({ x: 0, y: 0 });
+            const isMouseDownRef = useRef(false);
+
+            // Trigger BGM on first user interaction to satisfy browser security policies
+            const triggerBgmOnInteraction = useCallback(() => {
+                audio.init();
+                audio.playBgm();
+            }, []);
+
+            useEffect(() => {
+                const initialList = [...HANDCRAFTED_LEVELS];
+                // Generate procedural levels all the way up to 500
+                for (let i = 6; i <= 500; i++) {
+                    let size = 9;
+                    if (i > 50) size = 11;
+                    if (i > 150) size = 13;
+                    if (i > 350) size = 15;
+                    initialList.push(generateProceduralMaze(i, size));
+                }
+                setLevelsList(initialList);
+            }, []);
+
+            // Handle audio settings synchronization
+            useEffect(() => {
+                audio.setVolume('sfx', sfxVol);
+                audio.setVolume('bgm', bgmVol);
+            }, [sfxVol, bgmVol]);
+
+            // Track Game Clock Timer
+            useEffect(() => {
+                if (screen === 'game' && !solved) {
+                    timerRef.current = setInterval(() => {
+                        setGameTime(prev => prev + 1);
+                    }, 1000);
+                } else {
+                    clearInterval(timerRef.current);
+                }
+                return () => clearInterval(timerRef.current);
+            }, [screen, solved]);
+
+            // Auto-fit zoom to center map layouts cleanly
+            const fitLevelZoom = (level) => {
+                if (!level) return;
+                const canvasW = 640;
+                const canvasH = 460;
+                const totalW = level.width * 50;
+                const totalH = level.height * 50;
+                const fitScaleX = (canvasW - 100) / totalW;
+                const fitScaleY = (canvasH - 100) / totalH;
+                const idealScale = Math.min(fitScaleX, fitScaleY, 1.2);
+                setZoomScale(Math.max(0.5, Math.round(idealScale * 10) / 10));
+            };
+
+            const currentLevel = levelsList[currentLevelIdx] || null;
+
+            // Load Level Assets and solve for solution path
+            useEffect(() => {
+                if (currentLevel && screen === 'game') {
+                    playerPosRef.current = { x: currentLevel.start.x, y: currentLevel.start.y };
+                    slideTargetRef.current = null;
+                    slideQueueRef.current = [];
+                    setGameTime(0);
+                    setGameDistance(0);
+                    setSolved(false);
+                    setIsSliding(false);
+                    setShowHint(false);
+                    setShardsDoubled(false);
+                    shakeRef.current = 0;
+
+                    fitLevelZoom(currentLevel);
+
+                    const solution = solveMazeBFS(currentLevel);
+                    setHintPath(solution);
+                }
+            }, [currentLevelIdx, screen, currentLevel]);
+
+            const formatTime = (secs) => {
+                const mins = Math.floor(secs / 60).toString().padStart(2, '0');
+                const remainSecs = (secs % 60).toString().padStart(2, '0');
+                return `${mins}:${remainSecs}`;
+            };
+
+            useEffect(() => {
+                if (screen !== 'game' || !currentLevel || !canvasRef.current) return;
+
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                let animFrameId;
+
+                const pathSet = new Set(currentLevel.paths);
+                const connSet = new Set();
+                currentLevel.connections.forEach(c => {
+                    const [p1, p2] = c.split('-');
+                    connSet.add(`${p1}-${p2}`);
+                    connSet.add(`${p2}-${p1}`);
+                });
+
+                const hasConnection = (x1, y1, x2, y2) => {
+                    return connSet.has(`${x1},${y1}-${x2},${y2}`);
+                };
+
+                const cellWidth = 50;
+                const cellHeight = 50;
+
+                const tick = () => {
+                    const paddingX = (canvas.width - currentLevel.width * cellWidth * zoomScale) / 2;
+                    const paddingY = (canvas.height - currentLevel.height * cellHeight * zoomScale) / 2;
+
+                    if (slideQueueRef.current.length > 0) {
+                        const target = slideQueueRef.current[0];
+                        const dx = target.x - playerPosRef.current.x;
+                        const dy = target.y - playerPosRef.current.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const speed = 0.28; 
+
+                        if (dist < speed) {
+                            playerPosRef.current = { x: target.x, y: target.y };
+                            slideQueueRef.current.shift();
+                            setGameDistance(d => d + 130);
+
+                            // Pure white trail sparks
+                            for (let i = 0; i < 8; i++) {
+                                particlesRef.current.push({
+                                    x: (playerPosRef.current.x + 0.5) * cellWidth * zoomScale + paddingX,
+                                    y: (playerPosRef.current.y + 0.5) * cellHeight * zoomScale + paddingY,
+                                    vx: (Math.random() - 0.5) * 2.5,
+                                    vy: (Math.random() - 0.5) * 2.5,
+                                    color: '#ffffff',
+                                    size: Math.random() * 4 + 2,
+                                    alpha: 1,
+                                    decay: 0.04
+                                });
+                            }
+
+                            if (slideQueueRef.current.length === 0) {
+                                setIsSliding(false);
+                                shakeRef.current = 8;
+                                audio.playHit(); // Ball sound muted internally
+
+                                for (let i = 0; i < 15; i++) {
+                                    particlesRef.current.push({
+                                        x: (playerPosRef.current.x + 0.5) * cellWidth * zoomScale + paddingX,
+                                        y: (playerPosRef.current.y + 0.5) * cellHeight * zoomScale + paddingY,
+                                        vx: (Math.random() - 0.5) * 4.5,
+                                        vy: (Math.random() - 0.5) * 4.5,
+                                        color: '#ffffff',
+                                        size: Math.random() * 5 + 2,
+                                        alpha: 1,
+                                        decay: 0.03
+                                    });
+                                }
+
+                                if (playerPosRef.current.x === currentLevel.goal.x && playerPosRef.current.y === currentLevel.goal.y) {
+                                    handleLevelComplete();
+                                }
+                            }
+                        } else {
+                            playerPosRef.current.x += (dx / dist) * speed;
+                            playerPosRef.current.y += (dy / dist) * speed;
+
+                            if (Math.random() < 0.4) {
+                                particlesRef.current.push({
+                                    x: (playerPosRef.current.x + 0.5) * cellWidth * zoomScale + paddingX,
+                                    y: (playerPosRef.current.y + 0.5) * cellHeight * zoomScale + paddingY,
+                                    vx: (Math.random() - 0.5) * 0.5,
+                                    vy: (Math.random() - 0.5) * 0.5,
+                                    color: '#ffffff',
+                                    size: Math.random() * 3 + 1,
+                                    alpha: 0.8,
+                                    decay: 0.03
+                                });
+                            }
+                        }
+                    }
+
+                    ctx.save();
+                    ctx.fillStyle = '#100a26';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    if (shakeRef.current > 0.1) {
+                        const sx = (Math.random() - 0.5) * shakeRef.current;
+                        const sy = (Math.random() - 0.5) * shakeRef.current;
+                        ctx.translate(sx, sy);
+                        shakeRef.current *= 0.85;
+                    }
+
+                    // Ambience stars
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    for (let i = 0; i < 40; i++) {
+                        const sx = (Math.sin(i * 9999) * 0.5 + 0.5) * canvas.width;
+                        const sy = (Math.cos(i * 8888) * 0.5 + 0.5) * canvas.height;
+                        const r = Math.abs(Math.sin(Date.now() * 0.001 + i)) * 1.5 + 0.5;
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Draw Paths
+                    ctx.shadowBlur = 0; 
+                    pathSet.forEach(key => {
+                        const [cx, cy] = key.split(',').map(Number);
+                        const rx = cx * cellWidth * zoomScale + paddingX;
+                        const ry = cy * cellHeight * zoomScale + paddingY;
+                        const rw = cellWidth * zoomScale;
+                        const rh = cellHeight * zoomScale;
+
+                        ctx.fillStyle = '#1a113c';
+                        ctx.fillRect(rx, ry, rw, rh);
+                    });
+
+                    // Draw Walls
+                    ctx.lineWidth = 4 * zoomScale;
+                    ctx.lineCap = 'round';
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = '#bc3ffc';
+
+                    pathSet.forEach(key => {
+                        const [cx, cy] = key.split(',').map(Number);
+                        const rx = cx * cellWidth * zoomScale + paddingX;
+                        const ry = cy * cellHeight * zoomScale + paddingY;
+                        const rw = cellWidth * zoomScale;
+                        const rh = cellHeight * zoomScale;
+
+                        if (!hasConnection(cx, cy, cx, cy - 1)) {
+                            ctx.strokeStyle = '#bc3ffc';
+                            ctx.beginPath();
+                            ctx.moveTo(rx, ry);
+                            ctx.lineTo(rx + rw, ry);
+                            ctx.stroke();
+                        }
+                        if (!hasConnection(cx, cy, cx, cy + 1)) {
+                            ctx.strokeStyle = '#bc3ffc';
+                            ctx.beginPath();
+                            ctx.moveTo(rx, ry + rh);
+                            ctx.lineTo(rx + rw, ry + rh);
+                            ctx.stroke();
+                        }
+                        if (!hasConnection(cx, cy, cx - 1, cy)) {
+                            ctx.strokeStyle = '#bc3ffc';
+                            ctx.beginPath();
+                            ctx.moveTo(rx, ry);
+                            ctx.lineTo(rx, ry + rh);
+                            ctx.stroke();
+                        }
+                        if (!hasConnection(cx, cy, cx + 1, cy)) {
+                            ctx.strokeStyle = '#bc3ffc';
+                            ctx.beginPath();
+                            ctx.moveTo(rx + rw, ry);
+                            ctx.lineTo(rx + rw, ry + rh);
+                            ctx.stroke();
+                        }
+                    });
+
+                    // Hint Overlay
+                    if (showHint && hintPath.length > 0) {
+                        ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+                        ctx.lineWidth = 6 * zoomScale;
+                        ctx.setLineDash([4, 6]);
+                        ctx.shadowColor = '#fbbf24';
+                        ctx.shadowBlur = 10;
+
+                        ctx.beginPath();
+                        const firstStep = hintPath[0];
+                        const startX = (firstStep.from.x + 0.5) * cellWidth * zoomScale + paddingX;
+                        const startY = (firstStep.from.y + 0.5) * cellHeight * zoomScale + paddingY;
+                        ctx.moveTo(startX, startY);
+
+                        hintPath.forEach(node => {
+                            const tx = (node.to.x + 0.5) * cellWidth * zoomScale + paddingX;
+                            const ty = (node.to.y + 0.5) * cellHeight * zoomScale + paddingY;
+                            ctx.lineTo(tx, ty);
+                        });
+                        ctx.stroke();
+                        ctx.setLineDash([]); 
+                    }
+
+                    // Draw Golden Spiral Goal
+                    const gx = (currentLevel.goal.x + 0.5) * cellWidth * zoomScale + paddingX;
+                    const gy = (currentLevel.goal.y + 0.5) * cellHeight * zoomScale + paddingY;
+                    const timeSec = Date.now() * 0.003;
+
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = '#f59e0b';
+                    ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+                    ctx.lineWidth = 2 * zoomScale;
+                    for (let d = 0; d < 3; d++) {
+                        ctx.beginPath();
+                        for (let a = 0; a < Math.PI * 2; a += 0.2) {
+                            const r = (12 + d * 5 + Math.sin(timeSec + d) * 3) * zoomScale;
+                            const sx = gx + Math.cos(a + timeSec * (d === 1 ? -1 : 1)) * r;
+                            const sy = gy + Math.sin(a + timeSec * (d === 1 ? -1 : 1)) * r;
+                            if (a === 0) ctx.moveTo(sx, sy);
+                            else ctx.lineTo(sx, sy);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
+
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath();
+                    const size = 10 * zoomScale;
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (Math.PI / 4) * i;
+                        const radius = i % 2 === 0 ? size : size * 0.4;
+                        const sx = gx + Math.cos(angle) * radius;
+                        const sy = gy + Math.sin(angle) * radius;
+                        if (i === 0) ctx.moveTo(sx, sy);
+                        else ctx.lineTo(sx, sy);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Particles
+                    ctx.shadowBlur = 0;
+                    particlesRef.current.forEach((p, idx) => {
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        p.alpha -= p.decay;
+                        if (p.alpha <= 0) {
+                            particlesRef.current.splice(idx, 1);
+                            return;
+                        }
+                        ctx.fillStyle = p.color;
+                        ctx.globalAlpha = p.alpha;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size * zoomScale, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                    ctx.globalAlpha = 1.0; 
+
+                    // White Neon Player Ball
+                    const px = (playerPosRef.current.x + 0.5) * cellWidth * zoomScale + paddingX;
+                    const py = (playerPosRef.current.y + 0.5) * cellHeight * zoomScale + paddingY;
+                    ctx.shadowBlur = 24;
+                    ctx.shadowColor = '#ffffff'; 
+                    ctx.fillStyle = '#ffffff';   
+                    ctx.beginPath();
+                    ctx.arc(px, py, 12 * zoomScale, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                    ctx.beginPath();
+                    ctx.arc(px, py, (12 + Math.sin(Date.now() * 0.01) * 3) * zoomScale, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                    animFrameId = requestAnimationFrame(tick);
+                };
+
+                animFrameId = requestAnimationFrame(tick);
+                return () => cancelAnimationFrame(animFrameId);
+            }, [currentLevel, screen, zoomScale, showHint, hintPath]);
+
+            const triggerSlide = (dx, dy) => {
+                if (isSliding || solved || !currentLevel) return;
+
+                // Fire synth engine initialization on user move
+                triggerBgmOnInteraction();
+
+                const connSet = new Set();
+                currentLevel.connections.forEach(c => {
+                    const [p1, p2] = c.split('-');
+                    connSet.add(`${p1}-${p2}`);
+                    connSet.add(`${p2}-${p1}`);
+                });
+
+                const hasConnection = (x1, y1, x2, y2) => {
+                    return connSet.has(`${x1},${y1}-${x2},${y2}`);
+                };
+
+                const isJunction = (x, y, d_x, d_y) => {
+                    if (d_x !== 0) {
+                        return hasConnection(x, y, x, y - 1) || hasConnection(x, y, x, y + 1);
+                    }
+                    if (d_y !== 0) {
+                        return hasConnection(x, y, x - 1, y) || hasConnection(x, y, x + 1, y);
+                    }
+                    return false;
+                };
+
+                let cx = Math.round(playerPosRef.current.x);
+                let cy = Math.round(playerPosRef.current.y);
+                const queue = [];
+
+                while (true) {
+                    const nx = cx + dx;
+                    const ny = cy + dy;
+
+                    if (!hasConnection(cx, cy, nx, ny)) {
+                        break; 
+                    }
+
+                    cx = nx;
+                    cy = ny;
+                    queue.push({ x: cx, y: cy });
+
+                    if (cx === currentLevel.goal.x && cy === currentLevel.goal.y) {
+                        break;
+                    }
+
+                    if (isJunction(cx, cy, dx, dy)) {
+                        if (hasConnection(cx, cy, cx + dx, cy + dy)) {
+                            break;
+                        }
+                    }
+                }
+
+                if (queue.length > 0) {
+                    slideQueueRef.current = queue;
+                    setIsSliding(true);
+                    audio.playMove(); // Ball sound muted internally
+                }
+            };
+
+            const handleLevelComplete = () => {
+                setSolved(true);
+                audio.playWin();
+
+                let rating = 3; 
+                setEarnedStars(rating);
+
+                const addedShards = rating * 15;
+                setLevelShardsGained(addedShards);
+                setShards(prev => prev + addedShards);
+
+                setLevelStars(prev => ({
+                    ...prev,
+                    [currentLevel.id]: Math.max(prev[currentLevel.id] || 0, rating)
+                }));
+
+                if (currentLevelIdx + 1 >= unlockedLevelCount && unlockedLevelCount < levelsList.length) {
+                    setUnlockedLevelCount(prev => prev + 1);
+                }
+            };
+
+            // Keyboard input listeners
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (screen === 'game') {
+                        switch (e.key.toLowerCase()) {
+                            case 'w':
+                            case 'arrowup':
+                                e.preventDefault();
+                                triggerSlide(0, -1);
+                                break;
+                            case 'a':
+                            case 'arrowleft':
+                                e.preventDefault();
+                                triggerSlide(-1, 0);
+                                break;
+                            case 's':
+                            case 'arrowdown':
+                                e.preventDefault();
+                                triggerSlide(0, 1);
+                                break;
+                            case 'd':
+                            case 'arrowright':
+                                e.preventDefault();
+                                triggerSlide(1, 0);
+                                break;
+                            case 'h':
+                                e.preventDefault();
+                                audio.playClick();
+                                setScreen('path');
+                                break;
+                            case ' ':
+                                e.preventDefault();
+                                if (solved) {
+                                    handleNextLevel();
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [screen, isSliding, solved, currentLevelIdx, levelsList]);
+
+            const handleTouchStart = (e) => {
+                const touch = e.touches[0];
+                dragStartRef.current = { x: touch.clientX, y: touch.clientY };
+            };
+
+            const handleTouchEnd = (e) => {
+                if (isSliding || solved) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - dragStartRef.current.x;
+                const dy = touch.clientY - dragStartRef.current.y;
+                const threshold = 35;
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (Math.abs(dx) > threshold) {
+                        triggerSlide(dx > 0 ? 1 : -1, 0);
+                    }
+                } else {
+                    if (Math.abs(dy) > threshold) {
+                        triggerSlide(0, dy > 0 ? 1 : -1);
+                    }
+                }
+            };
+
+            const handleMouseDown = (e) => {
+                isMouseDownRef.current = true;
+                dragStartRef.current = { x: e.clientX, y: e.clientY };
+            };
+
+            const handleMouseUp = (e) => {
+                if (!isMouseDownRef.current || isSliding || solved) return;
+                isMouseDownRef.current = false;
+                const dx = e.clientX - dragStartRef.current.x;
+                const dy = e.clientY - dragStartRef.current.y;
+                const threshold = 35;
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (Math.abs(dx) > threshold) {
+                        triggerSlide(dx > 0 ? 1 : -1, 0);
+                    }
+                } else {
+                    if (Math.abs(dy) > threshold) {
+                        triggerSlide(0, dy > 0 ? 1 : -1);
+                    }
+                }
+            };
+
+            const handleJoystickStart = (e) => {
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                joystickStartPos.current = { x: clientX, y: clientY };
+                setIsDraggingJoystick(true);
+            };
+
+            const handleJoystickMove = (e) => {
+                if (!isDraggingJoystick) return;
+                e.preventDefault();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+                const dx = clientX - joystickStartPos.current.x;
+                const dy = clientY - joystickStartPos.current.y;
+
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const maxDist = 32;
+                let moveX = dx;
+                let moveY = dy;
+
+                if (dist > maxDist) {
+                    moveX = (dx / dist) * maxDist;
+                    moveY = (dy / dist) * maxDist;
+                }
+
+                setJoystickOffset({ x: moveX, y: moveY });
+
+                const triggerThreshold = 18;
+                if (dist > triggerThreshold && !isSliding && !solved) {
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        triggerSlide(dx > 0 ? 1 : -1, 0);
+                    } else {
+                        triggerSlide(0, dy > 0 ? 1 : -1);
+                    }
+                }
+            };
+
+            const handleJoystickEnd = () => {
+                setIsDraggingJoystick(false);
+                setJoystickOffset({ x: 0, y: 0 });
+            };
+
+            const handleActivateHint = () => {
+                if (shards >= 25 && !showHint) {
+                    audio.playClick();
+                    setShards(prev => prev - 25);
+                    setShowHint(true);
+                }
+            };
+
+            const handleClaimDoubleShards = () => {
+                if (!shardsDoubled) {
+                    audio.playClick();
+                    setShards(prev => prev + levelShardsGained);
+                    setLevelShardsGained(prev => prev * 2);
+                    setShardsDoubled(true);
+
+                    if (canvasRef.current) {
+                        const canvas = canvasRef.current;
+                        for (let i = 0; i < 45; i++) {
+                            particlesRef.current.push({
+                                x: canvas.width / 2,
+                                y: canvas.height / 2,
+                                vx: (Math.random() - 0.5) * 8,
+                                vy: (Math.random() - 0.5) * 8,
+                                color: '#ffffff',
+                                size: Math.random() * 6 + 3,
+                                alpha: 1,
+                                decay: 0.02
+                            });
+                        }
+                    }
+                }
+            };
+
+            const handleNextLevel = () => {
+                audio.playClick();
+                if (currentLevelIdx + 1 < levelsList.length) {
+                    setCurrentLevelIdx(prev => prev + 1);
+                    setSolved(false);
+                } else {
+                    setScreen('path');
+                }
+            };
+
+            // Calculate precise pixel positions for our custom overlay hand tutorial on Level 1
+            const getLevel1TutorialCoords = () => {
+                if (currentLevelIdx !== 0 || !currentLevel) return { left: 0, top: 0 };
+                const cellWidth = 50;
+                const cellHeight = 50;
+                const canvasW = 640;
+                const canvasH = 460;
+                const paddingX = (canvasW - currentLevel.width * cellWidth * zoomScale) / 2;
+                const paddingY = (canvasH - currentLevel.height * cellHeight * zoomScale) / 2;
+                // Level 1 Start is at X = 5, Y = 3
+                const xVal = (5 + 0.5) * cellWidth * zoomScale + paddingX - 40;
+                const yVal = (3 + 0.5) * cellHeight * zoomScale + paddingY - 40;
+                return { left: `${xVal}px`, top: `${yVal}px` };
+            };
+
+            return (
+                <div 
+                    className="relative w-screen h-screen flex flex-col justify-between select-none"
+                    onClick={triggerBgmOnInteraction}
+                    onTouchStart={triggerBgmOnInteraction}
+                >
+                    
+                    {/* Stars background design layout */}
+                    <div className="absolute inset-0 bg-cover pointer-events-none opacity-40 mix-blend-color-dodge shimmer-bg"></div>
+
+                    {/* --- HEADER UI --- */}
+                    <header className="flex justify-between items-center px-6 py-4 z-10">
+                        {screen === 'game' ? (
+                            <button 
+                                onClick={() => { audio.playClick(); setScreen('path'); }}
+                                className="w-12 h-12 rounded-full bg-[#1e1445] border border-[#3b2787] flex items-center justify-center hover:bg-[#2b1c63] transition active:scale-95 shadow-lg"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </button>
+                        ) : (
+                            <div className="w-12"></div>
+                        )}
+
+                        {screen === 'game' ? (
+                            <div className="bg-[#1b103c]/90 border border-[#3b278a] rounded-2xl px-6 py-2 flex items-center gap-6 shadow-xl">
+                                <div className="text-center">
+                                    <div className="text-xl font-bold text-white">{currentLevelIdx + 1}</div>
+                                    <div className="text-[10px] tracking-wider text-purple-400 font-bold uppercase">Level</div>
+                                </div>
+                                <div className="w-[1px] h-8 bg-[#3b278a]"></div>
+                                <div className="text-center min-w-[50px]">
+                                    <div className="text-xl font-bold text-white font-mono">{formatTime(gameTime)}</div>
+                                    <div className="text-[10px] tracking-wider text-purple-400 font-bold uppercase">Time</div>
+                                </div>
+                                <div className="w-[1px] h-8 bg-[#3b278a]"></div>
+                                <div className="text-center">
+                                    <div className="text-xl font-bold text-white font-mono">{gameDistance.toLocaleString()}</div>
+                                    <div className="text-[10px] tracking-wider text-purple-400 font-bold uppercase">Dist</div>
+                                </div>
+                            </div>
+                        ) : (
+                            <h1 className="text-3xl font-extrabold tracking-wider text-white flex items-center gap-2 neon-glow">
+                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-400 to-violet-500">
+                                    Nova Escape
+                                </span>
+                            </h1>
+                        )}
+
+                        <div className="flex items-center gap-3">
+                            {screen === 'game' && (
+                                <button 
+                                    onClick={handleActivateHint}
+                                    disabled={shards < 25 || showHint}
+                                    className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg border transition duration-150 ${
+                                        showHint 
+                                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' 
+                                            : shards < 25 
+                                                ? 'bg-[#1b143c] border-purple-900/40 text-purple-600 cursor-not-allowed' 
+                                                : 'bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 hover:from-amber-600 hover:to-amber-700 hover:scale-105 active:scale-95 text-[#100a26]'
+                                    }`}
+                                >
+                                    <span className="text-base">💡</span>
+                                    <span className="uppercase tracking-wider text-[11px] font-bold">Hint</span>
+                                    <span className="font-mono text-xs border-l border-amber-950/20 pl-2">25 ✦</span>
+                                </button>
+                            )}
+
+                            <div className="bg-[#fbbf24]/20 border border-[#fbbf24] text-amber-300 font-bold px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg">
+                                <span className="text-xl">✦</span>
+                                <span className="font-mono">{shards}</span>
+                                <span className="text-[10px] uppercase text-amber-400 font-bold tracking-wider">Shards</span>
+                            </div>
+
+                            <button 
+                                onClick={() => { audio.playClick(); setPreviousScreen(screen); setScreen('settings'); }}
+                                className="w-12 h-12 rounded-full bg-[#1e1445] border border-[#3b2787] flex items-center justify-center hover:bg-[#2b1c63] transition active:scale-95 shadow-lg"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* --- MAIN GAMEPLAY WINDOW --- */}
+                    {screen === 'game' && currentLevel && (
+                        <main className="flex-1 flex flex-col items-center justify-center relative p-4 overflow-hidden">
+                            
+                            <div 
+                                className="relative rounded-2xl overflow-hidden border-2 border-[#bc3ffc]/40 shadow-2xl bg-[#0e0724]"
+                                onTouchStart={handleTouchStart}
+                                onTouchEnd={handleTouchEnd}
+                                onMouseDown={handleMouseDown}
+                                onMouseUp={handleMouseUp}
+                            >
+                                <canvas 
+                                    ref={canvasRef} 
+                                    width={640} 
+                                    height={460}
+                                    className="block max-w-full h-auto cursor-grab active:cursor-grabbing"
+                                />
+
+                                {/* LEVEL 1 HAND TUTORIAL OVERLAY WITH SECONDS ANIMATION */}
+                                {currentLevelIdx === 0 && gameDistance === 0 && (
+                                    <div 
+                                        className="absolute pointer-events-none select-none z-30" 
+                                        style={{
+                                            ...getLevel1TutorialCoords(),
+                                            animation: 'tutorial-swipe-left 2.2s infinite ease-in-out'
+                                        }}
+                                    >
+                                        <img 
+                                            src="image_1cffde.png" 
+                                            alt="Tutorial Hand" 
+                                            className="w-20 h-20 object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)]"
+                                            onError={(e) => {
+                                                // Fallback if image fails to load
+                                                e.target.src = "https://placehold.co/80x80/000000/ffffff?text=👆";
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* CONTROLLER SECTION (Virtual Joystick and Zoom) */}
+                            <div className="mt-4 flex flex-col md:flex-row items-center gap-8 bg-[#140c31]/90 border border-[#2e1d6d] px-8 py-3 rounded-3xl shadow-xl z-10">
+                                
+                                {/* ZOOM CONTROLLER */}
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={() => { audio.playClick(); setZoomScale(z => Math.max(0.5, z - 0.25)); }}
+                                        className="w-8 h-8 rounded-full bg-[#27195c] flex items-center justify-center font-bold hover:bg-[#34227c] text-white active:scale-95"
+                                    >
+                                        -
+                                    </button>
+                                    
+                                    <div className="w-20 h-1.5 bg-[#20154d] rounded-full overflow-hidden relative">
+                                        <div 
+                                            className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full"
+                                            style={{ width: `${((zoomScale - 0.5) / 1.5) * 100}%` }}
+                                        ></div>
+                                    </div>
+
+                                    <span className="font-mono text-purple-300 text-xs font-semibold w-8 text-center">
+                                        {zoomScale.toFixed(1)}x
+                                    </span>
+
+                                    <button 
+                                        onClick={() => { audio.playClick(); setZoomScale(z => Math.min(2.0, z + 0.25)); }}
+                                        className="w-8 h-8 rounded-full bg-[#27195c] flex items-center justify-center font-bold hover:bg-[#34227c] text-white active:scale-95"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+
+                                <div className="hidden md:block w-[1px] h-10 bg-purple-900/40"></div>
+
+                                {/* ANALOG-STYLE JOYSTICK */}
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[9px] uppercase font-bold tracking-widest text-purple-400 mb-1 flex items-center gap-1">
+                                        <span>🎮</span> Joystick Control
+                                    </span>
+                                    <div 
+                                        className="relative w-16 h-16 rounded-full bg-[#0c0721] border-2 border-purple-500/30 flex items-center justify-center touch-none shadow-inner"
+                                        id="joystick-boundary"
+                                        onTouchStart={handleJoystickStart}
+                                        onTouchMove={handleJoystickMove}
+                                        onTouchEnd={handleJoystickEnd}
+                                        onMouseDown={handleJoystickStart}
+                                        onMouseMove={handleJoystickMove}
+                                        onMouseUp={handleJoystickEnd}
+                                        onMouseLeave={handleJoystickEnd}
+                                    >
+                                        <div 
+                                            className="absolute w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-700 border border-fuchsia-300 shadow-lg flex items-center justify-center cursor-grab active:cursor-grabbing"
+                                            style={{
+                                                transform: `translate(${joystickOffset.x}px, ${joystickOffset.y}px)`,
+                                                transition: isDraggingJoystick ? 'none' : 'transform 0.1s ease-out'
+                                            }}
+                                        >
+                                            <div className="w-3 h-3 rounded-full bg-white/40"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                    )}
+
+                    {/* --- LEVEL SELECTION PATH MAP SCREEN --- */}
+                    {screen === 'path' && (
+                        <main className="flex-1 flex flex-col justify-center items-center px-4 max-w-lg mx-auto w-full z-10 overflow-y-auto py-8">
+                            <div className="text-center mb-4">
+                                <h2 className="text-4xl font-extrabold tracking-widest text-white neon-glow">Nova Path</h2>
+                                <p className="text-purple-400 uppercase tracking-widest text-xs font-bold mt-1">Select A Level (1 - 500)</p>
+                            </div>
+
+                            <div className="relative w-full h-[460px] bg-[#140c31] border border-purple-900/40 rounded-3xl p-6 shadow-2xl flex flex-col justify-between overflow-hidden">
+                                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#805ad5_1px,transparent_1px)] [background-size:16px_16px]"></div>
+
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                                    <path 
+                                        d="M 210 390 Q 340 280 180 180 T 220 40" 
+                                        fill="none" 
+                                        stroke="#5b21b6" 
+                                        strokeWidth="4" 
+                                        strokeDasharray="8,8"
+                                    />
+                                </svg>
+
+                                {/* Staggered visual level route selector */}
+                                <div className="relative w-full h-full flex flex-col-reverse justify-around items-center">
+                                    {levelsList.slice(Math.max(0, unlockedLevelCount - 5), Math.max(5, unlockedLevelCount)).map((level, relativeIdx) => {
+                                        const actualIdx = levelsList.indexOf(level);
+                                        const isUnlocked = actualIdx < unlockedLevelCount;
+                                        const isActive = actualIdx === unlockedLevelCount - 1;
+                                        const starsEarned = levelStars[level.id] || 0;
+
+                                        const staggeredX = Math.sin(relativeIdx * 1.5) * 65;
+
+                                        return (
+                                            <div 
+                                                key={level.id} 
+                                                className="flex flex-col items-center z-10 cursor-pointer"
+                                                style={{ transform: `translateX(${staggeredX}px)` }}
+                                                onClick={() => {
+                                                    if (isUnlocked) {
+                                                        audio.playClick();
+                                                        setCurrentLevelIdx(actualIdx);
+                                                        setScreen('game');
+                                                    }
+                                                }}
+                                            >
+                                                <div className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl transition duration-150 ${
+                                                    isActive 
+                                                        ? 'bg-gradient-to-tr from-amber-400 via-orange-500 to-amber-300 text-white shadow-[0_0_20px_#f59e0b] border-2 border-amber-300 scale-110' 
+                                                        : isUnlocked 
+                                                            ? 'bg-gradient-to-tr from-[#6366f1] to-[#a855f7] border border-purple-400 text-white hover:scale-105 active:scale-95' 
+                                                            : 'bg-[#1b143c] border border-purple-900/60 text-purple-700 cursor-not-allowed'
+                                                }`}>
+                                                    {isUnlocked ? (
+                                                        <span>{level.id}</span>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                        </svg>
+                                                    )}
+
+                                                    {isActive && (
+                                                        <div className="absolute -inset-2 rounded-full border border-dashed border-amber-400 animate-[spin_8s_linear_infinite]"></div>
+                                                    )}
+                                                </div>
+
+                                                {isUnlocked && (
+                                                    <div className="flex gap-1 mt-1">
+                                                        {[1, 2, 3].map(starNum => (
+                                                            <span 
+                                                                key={starNum} 
+                                                                className={`text-sm ${starNum <= starsEarned ? 'text-amber-400 drop-shadow-[0_0_2px_#f59e0b]' : 'text-purple-900'}`}
+                                                            >
+                                                                ★
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Additional level pager buttons to hop easily across 500 levels */}
+                            <div className="mt-4 flex gap-4 w-full">
+                                <button 
+                                    onClick={() => {
+                                        audio.playClick();
+                                        setUnlockedLevelCount(prev => Math.max(1, prev - 5));
+                                    }}
+                                    className="flex-1 py-2 bg-[#1b103c] border border-purple-900 rounded-xl text-purple-300 font-bold hover:bg-[#2b1c63]"
+                                >
+                                    ◀ Back 5 Stages
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        audio.playClick();
+                                        setUnlockedLevelCount(prev => Math.min(500, prev + 5));
+                                    }}
+                                    className="flex-1 py-2 bg-gradient-to-r from-[#6366f1] to-[#a855f7] rounded-xl text-white font-bold hover:brightness-110"
+                                >
+                                    Skip +5 Stages ▶
+                                </button>
+                            </div>
+                        </main>
+                    )}
+
+                    {/* --- SETTINGS SCREEN --- */}
+                    {screen === 'settings' && (
+                        <main className="flex-1 flex items-center justify-center p-4 z-10">
+                            <div className="w-full max-w-md bg-[#18103c] border-2 border-[#3b2787] rounded-3xl p-6 shadow-2xl relative">
+                                
+                                <button 
+                                    onClick={() => { audio.playClick(); setScreen(previousScreen); }}
+                                    className="absolute top-4 right-4 w-10 h-10 rounded-full bg-[#27195c] hover:bg-[#34227c] flex items-center justify-center active:scale-95"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+
+                                <h2 className="text-3xl font-extrabold tracking-widest text-white text-center mb-8">Settings</h2>
+
+                                <div className="space-y-6">
+                                    <div className="bg-[#140c31] border border-purple-900/40 p-5 rounded-2xl">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-white text-lg">Background Music</span>
+                                            <span className="text-amber-400 font-mono font-bold text-sm">{bgmVol}%</span>
+                                        </div>
+                                        <div className="text-xs text-purple-400 mb-3 uppercase tracking-wider font-bold">Game background audio</div>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="100" 
+                                            value={bgmVol}
+                                            onChange={(e) => setBgmVol(Number(e.target.value))}
+                                            className="w-full accent-fuchsia-500 bg-[#25154f] h-2 rounded-full appearance-none cursor-pointer"
+                                        />
+                                    </div>
+
+                                    <div className="bg-[#140c31] border border-purple-900/40 p-5 rounded-2xl">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-white text-lg">Sound Effects</span>
+                                            <span className="text-amber-400 font-mono font-bold text-sm">{sfxVol}%</span>
+                                        </div>
+                                        <div className="text-xs text-purple-400 mb-3 uppercase tracking-wider font-bold">In-game sound effects</div>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="100" 
+                                            value={sfxVol}
+                                            onChange={(e) => setSfxVol(Number(e.target.value))}
+                                            className="w-full accent-fuchsia-500 bg-[#25154f] h-2 rounded-full appearance-none cursor-pointer"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={() => { audio.playClick(); setScreen('instructions'); }}
+                                    className="w-full mt-8 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-400 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-lg rounded-2xl shadow-lg transition active:scale-95 glow-btn"
+                                >
+                                    How To Play
+                                </button>
+                            </div>
+                        </main>
+                    )}
+
+                    {/* --- WELCOME / INSTRUCTIONS SCREEN --- */}
+                    {screen === 'instructions' && (
+                        <main className="flex-1 flex items-center justify-center p-4 z-10 overflow-y-auto">
+                            <div className="w-full max-w-md bg-[#130b32] border-2 border-[#2b186b] rounded-3xl p-6 shadow-2xl">
+                                <div className="text-center mb-4">
+                                    <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-1">Welcome To</p>
+                                    <h2 className="text-3xl font-extrabold text-white tracking-widest neon-glow">Nova Escape</h2>
+                                </div>
+
+                                <div className="bg-[#1b103c] border border-purple-900/40 rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden mb-4 min-h-[100px]">
+                                    <div className="absolute top-2 text-[10px] uppercase font-bold tracking-widest text-purple-400/60">Practice Area</div>
+                                    <div className="w-4 h-4 bg-white rounded-full shadow-[0_0_10px_#ffffff] absolute left-1/4 top-1/2 -translate-y-1/2 animate-[swipe-ball_3s_infinite_ease-in-out]"></div>
+                                    <div className="text-2xl absolute right-1/4 top-1/2 -translate-y-1/2 animate-[swipe-hand_3s_infinite_ease-in-out]">👆</div>
+                                    <div className="text-xs text-purple-400 font-bold uppercase tracking-widest mt-12">Swipe, Drag or Use Arrows/WASD/Joystick</div>
+                                </div>
+
+                                <div className="space-y-2.5">
+                                    <div className="flex gap-4 bg-[#18103c]/90 border border-purple-900/30 p-3 rounded-xl items-center">
+                                        <div className="text-2xl">👆</div>
+                                        <div className="text-xs">
+                                            <span className="font-bold text-white">Swipe anywhere</span>, use the <span className="font-bold text-white">Joystick Control</span>, or <span className="font-bold text-white">WASD/Arrows</span> to slide.
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-4 bg-[#18103c]/90 border border-purple-900/30 p-3 rounded-xl items-center">
+                                        <div className="text-2xl">⚡</div>
+                                        <div className="text-xs">
+                                            The light <span className="font-bold text-white">slides until it hits a wall</span> or reaches a multi-path junction.
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-4 bg-[#18103c]/90 border border-purple-900/30 p-3 rounded-xl items-center">
+                                        <div className="text-2xl">🧩</div>
+                                        <div className="text-xs">
+                                            Guide the <span className="font-bold text-white">white light orb</span> to the golden target to escape!
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 text-center">
+                                    <button 
+                                        onClick={() => { audio.playClick(); setScreen('game'); }}
+                                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-400 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xl rounded-2xl shadow-lg transition active:scale-95 glow-btn"
+                                    >
+                                        Got it! 🚀
+                                    </button>
+                                </div>
+                            </div>
+                        </main>
+                    )}
+
+                    {/* --- LEVEL COMPLETE OVERLAY --- */}
+                    {solved && (
+                        <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+                            <div className="w-full max-w-md bg-[#130b31] border-2 border-[#bc3ffc]/60 rounded-3xl p-6 text-center shadow-2xl relative">
+                                
+                                <div className="flex justify-center gap-3 mb-4">
+                                    {[1, 2, 3].map(sNum => (
+                                        <span 
+                                            key={sNum}
+                                            className={`text-5xl transition-all duration-300 ${
+                                                sNum <= earnedStars 
+                                                    ? 'text-amber-400 drop-shadow-[0_0_15px_#f59e0b] scale-110' 
+                                                    : 'text-purple-950/60 scale-95'
+                                            }`}
+                                        >
+                                            ★
+                                        </span>
+                                    ))}
+                                </div>
+
+                                <div className="text-xs font-bold uppercase tracking-widest text-purple-400 mb-1">Level Complete</div>
+                                <h3 className="text-4xl font-extrabold text-white tracking-widest mb-1 neon-glow">You Did It!</h3>
+                                <p className="text-purple-300 text-sm font-semibold uppercase tracking-wider mb-6">Level {currentLevelIdx + 1}</p>
+
+                                <div className="bg-[#1b103c] border border-purple-900/60 rounded-2xl py-4 px-6 flex justify-between items-center mb-6">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="text-2xl text-amber-300 animate-pulse">✦</span>
+                                        <span className="font-extrabold text-white text-xl">+{levelShardsGained} Nova Shards</span>
+                                    </div>
+                                    <div className="bg-amber-400/20 text-amber-300 border border-amber-400 text-[10px] uppercase font-black px-2 py-1 rounded">
+                                        New Star Highscore!
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={handleClaimDoubleShards}
+                                    disabled={shardsDoubled}
+                                    className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-extrabold text-xl shadow-lg border transition ${
+                                        shardsDoubled 
+                                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 cursor-not-allowed' 
+                                            : 'bg-gradient-to-r from-[#ec4899] via-[#f43f5e] to-[#eab308] border-pink-400 hover:brightness-110 active:scale-95'
+                                    }`}
+                                >
+                                    <span className="text-xl">📹</span>
+                                    <span>{shardsDoubled ? 'Claimed 2x Shards!' : 'Claim 2x Shards'}</span>
+                                </button>
+
+                                <div className="grid grid-cols-2 gap-4 mt-6">
+                                    <div className="bg-[#140c31] border border-purple-900/40 p-4 rounded-2xl flex flex-col items-center">
+                                        <span className="text-2xl mb-1">⏱️</span>
+                                        <span className="text-xl font-bold font-mono text-white">{formatTime(gameTime)}</span>
+                                        <span className="text-[10px] tracking-wider uppercase text-purple-400 font-bold">Your Time</span>
+                                    </div>
+
+                                    <div className="bg-[#140c31] border border-purple-900/40 p-4 rounded-2xl flex flex-col items-center">
+                                        <span className="text-2xl mb-1">⚡</span>
+                                        <span className="text-xl font-bold font-mono text-white">{gameDistance.toLocaleString()}</span>
+                                        <span className="text-[10px] tracking-wider uppercase text-purple-400 font-bold">Distance</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4 mt-8">
+                                    <button 
+                                        onClick={() => { audio.playClick(); setScreen('path'); setSolved(false); }}
+                                        className="flex-1 py-4 bg-[#1b103c] border border-purple-900/80 text-purple-300 font-bold rounded-2xl hover:bg-[#2b1c63] transition active:scale-95"
+                                    >
+                                        Home
+                                        <span className="block text-[9px] uppercase tracking-wider text-purple-500 font-bold mt-1">Press H</span>
+                                    </button>
+
+                                    <button 
+                                        onClick={handleNextLevel}
+                                        className="flex-[2] py-4 bg-gradient-to-r from-[#6366f1] to-[#a855f7] border border-purple-400 text-white font-extrabold rounded-2xl shadow-xl hover:brightness-110 transition active:scale-95"
+                                    >
+                                        Next Level ➔
+                                        <span className="block text-[9px] uppercase tracking-wider text-purple-200 font-bold mt-1">Press Space</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* FOOTER LABEL */}
+                    <footer className="py-4 text-center text-xs text-purple-400/60 font-semibold tracking-wider select-none z-10">
+                        WASD / Arrows • Swipe Canvas • Joystick Control
+                    </footer>
+
+                    <style>{`
+                        @keyframes swipe-ball {
+                            0% { transform: translateX(0); }
+                            30% { transform: translateX(80px); }
+                            70% { transform: translateX(80px); }
+                            100% { transform: translateX(0); }
+                        }
+                        @keyframes swipe-hand {
+                            0% { transform: translate(0, -50%); opacity: 0; }
+                            10% { opacity: 1; }
+                            30% { transform: translate(80px, -50%); opacity: 1; }
+                            40% { opacity: 0; }
+                            100% { transform: translate(0, -50%); opacity: 0; }
+                        }
+                    `}</style>
+                </div>
+            );
+        }
+
+        // Render React Application
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
